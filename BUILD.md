@@ -5,6 +5,7 @@
 1. Install [CMake](https://cmake.org/install/)
     * Don't use the one that comes with Visual Studio on Windows.
 1. Install [Ninja](https://ninja-build.org/)
+1. Install a version of libstdc++ of at least 12. This can be done on Ubuntu with `sudo apt install libstdc++-12-dev`
 
 ## Fetch submodule dependencies
 
@@ -34,7 +35,7 @@ If you want to build Subdoc, you will need [a recent LLVM installation](
 environment variables.
 
 ```
-LLVM_ROOT=/path/to/llvm/install USE_SUBDOC=true ./tools/configure.sh
+LLVM_ROOT=/path/to/llvm/install USE_LLVM_CLANG=true SUBDOC=true ./tools/configure.sh
 ```
 
 ### Windows
@@ -88,6 +89,13 @@ ctest --test-dir out -j 10
 To build Subdoc you will need a recent LLVM installation, and to build Subspace
 you may need a newer C++ compiler than is available on your system. You can
 install prebuilt versions of these, or you can build them yourself.
+
+To get a prebuilt version of LLVM, you can do the following:
+```
+wget https://apt.llvm.org/llvm.sh
+chmod +x llvm.sh
+sudo ./llvm.sh ${clang_version} all
+```
 
 If you are building LLVM yourself, you can use the following to configure,
 build, and install it:
