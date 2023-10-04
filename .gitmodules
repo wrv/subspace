@@ -16,3 +16,7 @@
 [submodule "third_party/rlbox"]
 	path = third_party/rlbox
 	url = https://github.com/PLSysSec/rlbox
+[submodule "third_party/md4c"]
+	path = third_party/md4c
+	url = https://github.com/wrv/md4c
+	branch = rlbox
