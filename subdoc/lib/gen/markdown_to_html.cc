@@ -20,15 +20,57 @@
 #include "subdoc/lib/gen/files.h"
 #include "sus/ops/range.h"
 
-#pragma warning(push)
-#pragma warning(disable : 4244)
-#include "third_party/md4c/src/md4c-html.h"
-#include "third_party/md4c/src/md4c.h"
-#pragma warning(pop)
+// Comment out to use the NOOP sandbox
+//#define USE_WASM_SBX
+
+// Use RLBox in a single-threaded environment
+#define RLBOX_SINGLE_THREADED_INVOCATIONS
+
+#ifdef USE_WASM_SBX
+
+// All calls into the sandbox are resolved statically.
+#define RLBOX_USE_STATIC_CALLS() rlbox_wasm2c_sandbox_lookup_symbol
+#define RLBOX_WASM2C_MODULE_NAME  md4c
+
+#include "third_party/md4c/src/md4c.wasm.h"
+#include "third_party/rlbox/code/include/rlbox.hpp"
+#include "third_party/rlbox_wasm2c_sandbox/include/rlbox_wasm2c_sandbox.hpp"
+
+using namespace rlbox;
+
+// Define base type for md4c using the wasm2c sandbox
+RLBOX_DEFINE_BASE_TYPES_FOR(md4c, wasm2c)
+
+#else
+
+// All calls into the sandbox are resolved statically.
+#define RLBOX_USE_STATIC_CALLS() rlbox_noop_sandbox_lookup_symbol
+
+#include "third_party/rlbox/code/include/rlbox.hpp"
+#include "third_party/rlbox/code/include/rlbox_noop_sandbox.hpp"
+
+// Define base type for md4c using the wasm2c sandbox
+RLBOX_DEFINE_BASE_TYPES_FOR(md4c, noop)
+#endif
+
+using namespace rlbox;
+
+#include "subdoc/lib/gen/rlbox_md4c_types.h"
+rlbox_load_structs_from_library(md4c);
 
 namespace subdoc::gen {
 
 namespace {
+
+struct UserData {
+  std::ostringstream& parsed;
+  ParseMarkdownPageState& page_state;
+  sus::Option<std::string> error_message;
+};
+
+// UserData is not modified within md4c, so never send it to 
+// the library so it has no chance of corrupting it. 
+thread_local UserData* userdata = nullptr;
 
 /// Grabs the contents of the first non-empty html tag as the summary.
 std::string summarize_html(std::string_view html) noexcept {
@@ -310,155 +352,238 @@ void apply_syntax_highlighting(std::string& str) noexcept {
 
 }  // namespace
 
+// Callback functions
+
+void process_output(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, tainted_md4c<void*> v) {
+  assert(userdata);
+
+  auto chars = tainted_chars.copy_and_verify_string([](std::unique_ptr<MD_CHAR[]> val) {
+    assert(val != nullptr);
+    return std::move(val);
+  });
+
+  auto size = tainted_size.copy_and_verify([](MD_SIZE val) {
+    return val;
+  });
+
+  userdata->parsed << std::string_view(chars.get(), size);
+}
+
+tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, tainted_md4c<void*> v,
+                            tainted_md4c<MD_HTML*> tainted_html) {
+  assert(userdata);
+
+  auto chars = tainted_chars.copy_and_verify_string([](std::unique_ptr<MD_CHAR[]> val) {
+    assert(val != nullptr);
+    return std::move(val);
+  });
+
+  auto size = tainted_size.copy_and_verify([](MD_SIZE val) {
+    return val;
+  });
+
+  auto mapped = std::string(std::string_view(chars.get(), size));
+
+  auto count = 0_u32;
+  if (auto it = userdata->page_state.self_link_counts.find(mapped);
+      it != userdata->page_state.self_link_counts.end()) {
+    count = it->second;
+  }
+
+  for (char& c : mapped) {
+    if (c == ' ') {
+      c = '-';
+    } else {
+      // SAFETY: The input is a char, so tolower will give a value in the
+      // range of char.
+      c = sus::cast<char>(std::tolower(c));
+   }
+  }
+
+  int result = 0;
+  auto tainted_mapped = sandbox.malloc_in_sandbox<MD_CHAR>(size);
+  mapped.copy(tainted_mapped.unverified_safe_pointer_because(size, "writing to region"), mapped.length(), 0);
+  result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_mapped, size).copy_and_verify([](int val) {return val;});
+
+  if (result != 0) return result;
+  if (count > 0u) {
+    auto cur_char = sandbox.malloc_in_sandbox<MD_CHAR>(2);
+    cur_char[0] = '-';
+    cur_char[1] = '\0';
+    result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, cur_char, 1).copy_and_verify([](int val) {return val;});
+   if (result != 0) return result;
+    while (count > 0u) {
+      static const char NUMS[] = "0123456789";
+      auto val = NUMS + (count % 10u);
+      cur_char[0] = *val;
+      cur_char[1] = '\0';
+      result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, cur_char, 1u).copy_and_verify([](int val) {return val;});
+    if (result != 0) return result;
+      count /= 10u;
+   }
+  }
+  return result;
+}
+
+tainted_md4c<int> record_self_link(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, tainted_md4c<void*> v) {
+  assert(userdata);
+  auto chars = tainted_chars.copy_and_verify_string([](std::unique_ptr<MD_CHAR[]> val) {
+    assert(val != nullptr);
+    return std::move(val);
+  });
+
+  auto size = tainted_size.copy_and_verify([](MD_SIZE val) {
+    return val;
+  });
+
+  auto mapped = std::string(std::string_view(chars.get(), size));
+  if (auto it = userdata->page_state.self_link_counts.find(mapped);
+      it != userdata->page_state.self_link_counts.end()) {
+    it->second += 1u;
+  } else {
+    userdata->page_state.self_link_counts.emplace(sus::move(mapped), 1u);
+  }
+  return 0;
+}
+
+tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, tainted_md4c<void*> v,
+                            tainted_md4c<MD_HTML*> tainted_html) {
+  assert(userdata);
+
+  auto size = tainted_size.copy_and_verify([](MD_SIZE val) {
+    return val;
+  });
+
+  auto chars = tainted_chars.copy_and_verify_string([](std::unique_ptr<MD_CHAR[]> val) {
+   
+    assert(val != nullptr);
+    return std::move(val);
+  });
+
+  auto name = std::string_view(chars.get(), size);
+  auto anchor = std::string_view();
+  if (auto pos = name.find('#'); pos != std::string_view::npos) {
+    anchor = name.substr(pos);
+    name = name.substr(0u, pos);
+  }
+  sus::Option<FoundName> found = userdata->page_state.db.find_name(name);
+  if (found.is_some()) {
+    std::string href;
+    switch (found.as_value()) {
+      case FoundName::Tag::Namespace:
+        href = construct_html_url_for_namespace(
+            found.as_value().as<FoundName::Tag::Namespace>());
+        break;
+      case FoundName::Tag::Function: {
+        href = construct_html_url_for_function(
+            found.as_value().as<FoundName::Tag::Function>());
+        break;
+      }
+      case FoundName::Tag::Type:
+        href = construct_html_url_for_type(
+            found.as_value().as<FoundName::Tag::Type>());
+        break;
+
+      case FoundName::Tag::Concept:
+        href = construct_html_url_for_concept(
+            found.as_value().as<FoundName::Tag::Concept>());
+        break;
+      case FoundName::Tag::Field:
+        href = construct_html_url_for_field(
+            found.as_value().as<FoundName::Tag::Field>());
+        break;
+   }
+    auto tainted_href_data = sandbox.malloc_in_sandbox<MD_CHAR>(href.size());
+    memcpy(tainted_href_data.unverified_safe_pointer_because(href.size(), "writing to region"), href.data(), href.size());
+    int r = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_href_data, href.size()).copy_and_verify([](int val) {return val;});
+    if (r != 0) return r;
+    if (anchor.size() > 0u) {
+      auto tainted_anchor_data = sandbox.malloc_in_sandbox<MD_CHAR>(anchor.size());
+      memcpy(tainted_anchor_data.unverified_safe_pointer_because(anchor.size(), "writing to region"), anchor.data(), anchor.size());
+      r = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_anchor_data, anchor.size()).copy_and_verify([](int val) {return val;});
+   }
+    return r;
+  } else {
+    std::string msg =
+        fmt::format("unable to resolve code link '{}' to a C++ name",
+                    std::string_view(chars.get(), size));
+    if (userdata->page_state.options.ignore_bad_code_links) {
+      fmt::println("WARNING: {}", msg);
+      return 0;
+   } else {
+      userdata->error_message = sus::some(sus::move(msg));
+      return -1;
+   }
+  }
+}
+
 sus::Result<MarkdownToHtml, MarkdownToHtmlError> markdown_to_html(
     const Comment& comment, ParseMarkdownPageState& page_state) noexcept {
+  
+  // Declare and create a new sandbox
+  rlbox_sandbox_md4c sandbox;
+  sandbox.create_sandbox();
+  
   std::ostringstream parsed;
 
-  struct UserData {
-    std::ostringstream& parsed;
-    ParseMarkdownPageState& page_state;
-    Option<std::string> error_message;
-  };
   UserData data(parsed, page_state, sus::none());
+  userdata = &data;
 
-  auto process_output = [](const MD_CHAR* chars, MD_SIZE size, void* v) {
-    auto& userdata = *reinterpret_cast<UserData*>(v);
-    userdata.parsed << std::string_view(chars, size);
-  };
-  auto render_self_link = [](const MD_CHAR* chars, MD_SIZE size, void* v,
-                             MD_HTML* html,
-                             int (*render)(MD_HTML* html, const MD_CHAR* chars,
-                                           MD_SIZE size)) -> int {
-    auto& userdata = *reinterpret_cast<UserData*>(v);
+  auto input = comment.text.data();
+  MD_SIZE input_size = u32::try_from(comment.text.size()).unwrap();
 
-    std::string mapped(std::string_view(chars, size));
-    auto count = 0_u32;
-    if (auto it = userdata.page_state.self_link_counts.find(mapped);
-        it != userdata.page_state.self_link_counts.end()) {
-      count = it->second;
-    }
+  tainted_md4c<MD_CHAR*> tainted_input = sandbox.malloc_in_sandbox<MD_CHAR>(input_size);
+  if (!tainted_input) {
+    return sus::err(MarkdownToHtmlError{
+          .message = fmt::format("Failed to allocate sandbox memory")});
+  }
+  strncpy(tainted_input.unverified_safe_pointer_because(input_size, "writing to region"), input, input_size);
 
-    for (char& c : mapped) {
-      if (c == ' ') {
-        c = '-';
-      } else {
-        // SAFETY: The input is a char, so tolower will give a value in the
-        // range of char.
-        c = sus::cast<char>(std::tolower(c));
-      }
-    }
+  auto process_output_cb = sandbox.register_callback(process_output);
+  auto render_self_link_cb = sandbox.register_callback(render_self_link);
+  auto record_self_link_cb = sandbox.register_callback(record_self_link);
+  auto render_code_link_cb = sandbox.register_callback(render_code_link);
 
-    int result = 0;
-    result = render(html, mapped.data(), u32::try_from(mapped.size()).unwrap());
-    if (result != 0) return result;
-    if (count > 0u) {
-      result = render(html, "-", 1u);
-      if (result != 0) return result;
-      while (count > 0u) {
-        static const char NUMS[] = "0123456789";
-        result = render(html, NUMS + (count % 10u), 1u);
-        if (result != 0) return result;
-        count /= 10u;
-      }
-    }
-    return result;
-  };
-  auto record_self_link = [](const MD_CHAR* chars, MD_SIZE size,
-                             void* v) -> int {
-    auto& userdata = *reinterpret_cast<UserData*>(v);
-    auto mapped = std::string(std::string_view(chars, size));
-    if (auto it = userdata.page_state.self_link_counts.find(mapped);
-        it != userdata.page_state.self_link_counts.end()) {
-      it->second += 1u;
-    } else {
-      userdata.page_state.self_link_counts.emplace(sus::move(mapped), 1u);
-    }
-    return 0;
-  };
-  auto render_code_link = [](const MD_CHAR* chars, MD_SIZE size, void* v,
-                             MD_HTML* html,
-                             int (*render)(MD_HTML* html, const MD_CHAR* chars,
-                                           MD_SIZE size)) -> int {
-    auto& userdata = *reinterpret_cast<UserData*>(v);
-    auto name = std::string_view(chars, size);
-    auto anchor = std::string_view();
-    if (auto pos = name.find('#'); pos != std::string_view::npos) {
-      anchor = name.substr(pos);
-      name = name.substr(0u, pos);
-    }
-    Option<FoundName> found = userdata.page_state.db.find_name(name);
-    if (found.is_some()) {
-      std::string href;
-      switch (found.as_value()) {
-        case FoundName::Tag::Namespace:
-          href = construct_html_url_for_namespace(
-              found.as_value().as<FoundName::Tag::Namespace>());
-          break;
-        case FoundName::Tag::Function: {
-          href = construct_html_url_for_function(
-              found.as_value().as<FoundName::Tag::Function>());
-          break;
-        }
-        case FoundName::Tag::Type:
-          href = construct_html_url_for_type(
-              found.as_value().as<FoundName::Tag::Type>());
-          break;
-        case FoundName::Tag::Concept:
-          href = construct_html_url_for_concept(
-              found.as_value().as<FoundName::Tag::Concept>());
-          break;
-        case FoundName::Tag::Field:
-          href = construct_html_url_for_field(
-              found.as_value().as<FoundName::Tag::Field>());
-          break;
-        case FoundName::Tag::Macro:
-          href = construct_html_url_for_macro(
-              found.as_value().as<FoundName::Tag::Macro>());
-          break;
-      }
-      int r = render(html, href.data(), u32::try_from(href.size()).unwrap());
-      if (r != 0) return r;
-      if (anchor.size() > 0u)
-        r = render(html, anchor.data(), u32::try_from(anchor.size()).unwrap());
-      return r;
-    } else {
-      std::string msg =
-          fmt::format("unable to resolve code link '{}' to a C++ name",
-                      std::string_view(chars, size));
-      if (userdata.page_state.options.ignore_bad_code_links) {
-        fmt::println("WARNING: {}", msg);
-        return 0;
-      } else {
-        userdata.error_message = sus::some(sus::move(msg));
-        return -1;
-      }
-    }
-  };
+  auto tainted_callbacks = sandbox.malloc_in_sandbox<MD_HTML_CALLBACKS>();
+  tainted_callbacks->process_output   = process_output_cb;
+  tainted_callbacks->render_self_link = render_self_link_cb;
+  tainted_callbacks->record_self_link = record_self_link_cb;
+  tainted_callbacks->render_code_link = render_code_link_cb;
 
-  int result = md_html(
-      comment.text.data(), u32::try_from(comment.text.size()).unwrap(),
-      MD_HTML_CALLBACKS{
-          process_output,
-          render_self_link,
-          record_self_link,
-          render_code_link,
-      },
-      &data,
-      MD_FLAG_PERMISSIVEAUTOLINKS | MD_FLAG_TABLES | MD_FLAG_STRIKETHROUGH |
+  unsigned parser_flags = MD_FLAG_PERMISSIVEAUTOLINKS | MD_FLAG_TABLES | MD_FLAG_STRIKETHROUGH |
           // Forked extensions.
-          MD_FLAG_HEADERSELFLINKS | MD_FLAG_CODELINKS,
-      // We enable MD_ASSERT() to catch memory safety bugs, so
-      // ensure something gets printed should a problem occur.
-      MD_HTML_FLAG_DEBUG);
+          MD_FLAG_HEADERSELFLINKS | MD_FLAG_CODELINKS;
+  
+  // We enable MD_ASSERT() to catch memory safety bugs, so
+  // ensure something gets printed should a problem occur.
+  unsigned renderer_flags = MD_HTML_FLAG_DEBUG;
+
+  int result = sandbox.invoke_sandbox_function(md_html, tainted_input, input_size, tainted_callbacks, nullptr, parser_flags, renderer_flags).copy_and_verify([](int ret){ return ret; });
+  
+  // Remove the sandbox components we created
+  sandbox.free_in_sandbox(tainted_input);
+  sandbox.free_in_sandbox(tainted_callbacks);
+
+  process_output_cb.unregister();
+  render_self_link_cb.unregister();
+  record_self_link_cb.unregister();
+  render_code_link_cb.unregister();
+  sandbox.destroy_sandbox();
+
   if (result != 0) {
-    if (data.error_message.is_some()) {
+    if (userdata->error_message.is_some()) {
+      auto error_message = userdata->error_message.take().unwrap();
+      userdata = nullptr;
       return sus::err(
-          MarkdownToHtmlError{.message = data.error_message.take().unwrap()});
+          MarkdownToHtmlError{.message = error_message});
     } else {
+      userdata = nullptr;
       return sus::err(MarkdownToHtmlError{
           .message = fmt::format("unknown parsing error '{}'", result)});
     }
   }
+
+  userdata = nullptr;
   std::string str = sus::move(parsed).str();
   apply_syntax_highlighting(str);
 
