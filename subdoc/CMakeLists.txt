@@ -139,7 +139,7 @@ target_link_libraries(subdoc_lib
 
 # subdoc binary
 subspace_binary_default_compile_options(subdoc)
-target_link_libraries(subdoc subdoc::lib)
+target_link_libraries(subdoc subdoc::lib RLBoxMD4C)
 
 if(${SUBSPACE_BUILD_TESTS})
     add_executable(subdoc_unittests
@@ -171,6 +171,7 @@ if(${SUBSPACE_BUILD_TESTS})
     target_link_libraries(subdoc_unittests
         subdoc::lib
         gtest
+        RLBoxMD4C
     )
 
     gtest_discover_tests(subdoc_unittests)

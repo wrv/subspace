@@ -93,5 +93,24 @@ add_subdirectory(sus)
 
 if (${SUBSPACE_BUILD_SUBDOC})
     add_subdirectory(third_party/md4c)
+    # Add the RLBox Includes
+    include_directories(
+        third_party/rlbox/code/include
+        third_party/rlbox_wasm2c_sandbox/include
+        third_party/rlbox_wasm2c_sandbox/build/_deps/mod_wasm2c-src/wasm2c
+    )
+
+    # Add a target to compile wasm-boxed MD4C
+    add_custom_target(BuildRLBoxMD4C ALL
+                      COMMAND make clean && make all
+                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                      BYPRODUCTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/md4c/src/md4c.wasm.a
+    )
+    add_library(RLBoxMD4C STATIC IMPORTED)
+    add_dependencies(RLBoxMD4C BuildRLBoxMD4C)
+    set_target_properties(RLBoxMD4C
+        PROPERTIES IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/third_party/md4c/src/md4c.wasm.a
+
+    )
     add_subdirectory(subdoc)
 endif()

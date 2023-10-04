@@ -21,7 +21,7 @@
 #include "sus/ops/range.h"
 
 // Comment out to use the NOOP sandbox
-//#define USE_WASM_SBX
+#define USE_WASM_SBX
 
 // Use RLBox in a single-threaded environment
 #define RLBOX_SINGLE_THREADED_INVOCATIONS

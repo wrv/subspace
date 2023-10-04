@@ -1,0 +1,194 @@
+name: docs
+
+on:
+  push:
+    branches: [rlbox]
+
+jobs:
+  docs:
+    name: Generate documentation with subdoc
+    if: github.repository == 'chromium/subspace'
+    runs-on: ubuntu-latest
+    env:
+      clang_version: 17
+      installed_clang_version: 14
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'true'
+
+      - uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.DOCS_SSH_PRIVATE_KEY }}
+
+      - name: Install LLVM+Clang
+        run: |
+          sudo apt-get remove clang-${installed_clang_version} \
+            lldb-${installed_clang_version} \
+            lld-${installed_clang_version} \
+            clangd-${installed_clang_version} \
+            clang-tidy-${installed_clang_version} \
+            clang-format-${installed_clang_version} \
+            clang-tools-${installed_clang_version} \
+            llvm-${installed_clang_version}-dev \
+            lld-${installed_clang_version} \
+            lldb-${installed_clang_version} \
+            llvm-${installed_clang_version}-tools \
+            libomp-${installed_clang_version}-dev \
+            libc++-${installed_clang_version}-dev \
+            libc++abi-${installed_clang_version}-dev \
+            libclang-common-${installed_clang_version}-dev \
+            libclang-${installed_clang_version}-dev \
+            libclang-cpp${installed_clang_version}-dev \
+            libunwind-${installed_clang_version}-dev
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh ${clang_version} all
+
+      - name: Download Ninja
+        id: ninja
+        shell: cmake -P {0}
+        run: |
+          set(ninja_version "1.11.1")
+
+          set(ninja_url "https://github.com/ninja-build/ninja/releases/download/v${ninja_version}/ninja-linux.zip")
+          file(DOWNLOAD "${ninja_url}" ./ninja.zip SHOW_PROGRESS)
+          execute_process(COMMAND ${CMAKE_COMMAND} -E tar xvf ./ninja.zip)
+
+          if (NOT "${{ runner.os }}" STREQUAL "Windows")
+            execute_process(
+              COMMAND chmod +x ninja
+            )
+          endif()
+      - name: Setup RLBox
+        shell: cmake -P {0}
+        run: |
+          cd third_party/rlbox/
+          cmake -S . -B ./build -DCMAKE_BUILD_TYPE=Release
+          cmake --build ./build --config Release --parallel
+          cd build && make -j
+      
+      - name: Setup WASM Sandbox
+        shell: cmake -P {0}
+        run: |
+           cd third_party/rlbox_wasm2c_sandbox
+           cmake -S . -B ./build
+           cmake --build ./build --parallel
+
+      - name: Configure
+        shell: cmake -P {0}
+        run: |
+          set(ENV{CC} clang-$ENV{clang_version})
+          set(ENV{CXX} clang++-$ENV{clang_version})
+
+          # Path to LLVM+Clang nightly that we have installed.
+          set(ENV{LLVM_DIR} "/usr/lib/llvm-$ENV{clang_version}/lib/cmake/llvm")
+          set(ENV{Clang_DIR} "/usr/lib/llvm-$ENV{clang_version}/lib/cmake/clang")
+
+          file(TO_CMAKE_PATH "$ENV{GITHUB_WORKSPACE}/ninja" ninja_program)
+
+          execute_process(
+            COMMAND cmake
+              -S .
+              -B out
+              -D CMAKE_BUILD_TYPE=Release
+              -D CMAKE_EXPORT_COMPILE_COMMANDS=1
+              -G Ninja
+              -D CMAKE_MAKE_PROGRAM=${ninja_program}
+              -D SUBSPACE_BUILD_TESTS=OFF
+              -D SUBSPACE_BUILD_SUBDOC=ON
+              -D SUBSPACE_BUILD_BENCHMARKS=OFF
+            RESULT_VARIABLE result
+          )
+          if (NOT result EQUAL 0)
+            message(FATAL_ERROR "Bad exit status")
+          endif()
+
+      - name: Build
+        shell: cmake -P {0}
+        run: |
+          set(ENV{NINJA_STATUS} "[%f/%t %o/sec] ")
+
+          execute_process(
+            COMMAND cmake --build out -j 10
+            RESULT_VARIABLE result
+          )
+          if (NOT result EQUAL 0)
+            message(FATAL_ERROR "Bad exit status")
+          endif()
+
+      # Reconfigure with tests enabled so that we generate docs through them
+      # to find all headers, and all static assertions.
+      - name: Reconfigure with tests
+        shell: cmake -P {0}
+        run: |
+          set(ENV{CC} clang-$ENV{clang_version})
+          set(ENV{CXX} clang++-$ENV{clang_version})
+
+          # Path to LLVM+Clang nightly that we have installed.
+          set(ENV{LLVM_DIR} "/usr/lib/llvm-$ENV{clang_version}/lib/cmake/llvm")
+          set(ENV{Clang_DIR} "/usr/lib/llvm-$ENV{clang_version}/lib/cmake/clang")
+
+          file(TO_CMAKE_PATH "$ENV{GITHUB_WORKSPACE}/ninja" ninja_program)
+
+          execute_process(
+            COMMAND cmake
+              -S .
+              -B out
+              -D CMAKE_BUILD_TYPE=Release
+              -D CMAKE_EXPORT_COMPILE_COMMANDS=1
+              -G Ninja
+              -D CMAKE_MAKE_PROGRAM=${ninja_program}
+              -D SUBSPACE_BUILD_TESTS=ON
+              -D SUBSPACE_BUILD_SUBDOC=ON
+              -D SUBSPACE_BUILD_BENCHMARKS=OFF
+            RESULT_VARIABLE result
+          )
+          if (NOT result EQUAL 0)
+            message(FATAL_ERROR "Bad exit status")
+          endif()
+
+      - name: Checkout docs
+        run: |
+          git clone git@github.com:subspace-cpp/docs.git docs
+          cd docs
+          git rm -r *
+
+        # Generate for files in subspace. We execute the tool on all files in
+        # the subspace library dir, and we limit generation to things defined
+        # in that directory (there's no other /sus/ directory it may include).
+      - name: Generate
+        run: |
+          # For crash dumps.
+          export LLVM_SYMBOLIZER_PATH="/usr/lib/llvm-${clang_version}/bin/llvm-symbolizer"
+
+          out/subdoc/subdoc \
+            -p out \
+            --out docs \
+            --include-file-pattern /sus/ \
+            --exclude-file-pattern /third_party/ \
+            --exclude-file-pattern /test/ \
+            --exclude-file-pattern test.cc \
+            --copy-file subdoc/gen_tests/subdoc-test-style.css \
+            --copy-file web/logo.png \
+            --copy-file web/logo32.png \
+            --copy-file web/logo16.png \
+            --favicon "logo.png;image/png" \
+            --favicon "logo32.png;image/png" \
+            --favicon "logo16.png;image/png" \
+            --css subdoc-test-style.css \
+            --project-logo logo.png \
+            --project-md sus/project.md \
+            --project-name Subspace \
+            /home/runner/work/subspace/subspace/sus
+
+      - name: Deploy
+        run: |
+          SHA=`git rev-parse HEAD`
+          cd docs
+          git config user.email "noreply@chromium.org"
+          git config user.name "Subspace subdoc generator"
+          git add .
+          git commit -m "Update docs: $SHA" || true
+          git push origin || true
