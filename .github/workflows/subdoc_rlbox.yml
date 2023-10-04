@@ -1,4 +1,4 @@
-name: docs
+name: build_rlbox_subdoc
 
 on:
   push:
@@ -6,8 +6,8 @@ on:
 
 jobs:
   docs:
-    name: Generate documentation with subdoc
-    if: github.repository == 'chromium/subspace'
+    name: Build subdoc with rlbox
+    if: github.repository == 'wrv/subspace'
     runs-on: ubuntu-latest
     env:
       clang_version: 17
@@ -17,10 +17,6 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: 'true'
-
-      - uses: webfactory/ssh-agent@v0.7.0
-        with:
-          ssh-private-key: ${{ secrets.DOCS_SSH_PRIVATE_KEY }}
 
       - name: Install LLVM+Clang
         run: |
@@ -62,7 +58,7 @@ jobs:
             )
           endif()
       - name: Setup RLBox
-        shell: cmake -P {0}
+        shell: bash
         run: |
           cd third_party/rlbox/
           cmake -S . -B ./build -DCMAKE_BUILD_TYPE=Release
@@ -70,7 +66,7 @@ jobs:
           cd build && make -j
       
       - name: Setup WASM Sandbox
-        shell: cmake -P {0}
+        shell: bash
         run: |
            cd third_party/rlbox_wasm2c_sandbox
            cmake -S . -B ./build
@@ -148,47 +144,3 @@ jobs:
           if (NOT result EQUAL 0)
             message(FATAL_ERROR "Bad exit status")
           endif()
-
-      - name: Checkout docs
-        run: |
-          git clone git@github.com:subspace-cpp/docs.git docs
-          cd docs
-          git rm -r *
-
-        # Generate for files in subspace. We execute the tool on all files in
-        # the subspace library dir, and we limit generation to things defined
-        # in that directory (there's no other /sus/ directory it may include).
-      - name: Generate
-        run: |
-          # For crash dumps.
-          export LLVM_SYMBOLIZER_PATH="/usr/lib/llvm-${clang_version}/bin/llvm-symbolizer"
-
-          out/subdoc/subdoc \
-            -p out \
-            --out docs \
-            --include-file-pattern /sus/ \
-            --exclude-file-pattern /third_party/ \
-            --exclude-file-pattern /test/ \
-            --exclude-file-pattern test.cc \
-            --copy-file subdoc/gen_tests/subdoc-test-style.css \
-            --copy-file web/logo.png \
-            --copy-file web/logo32.png \
-            --copy-file web/logo16.png \
-            --favicon "logo.png;image/png" \
-            --favicon "logo32.png;image/png" \
-            --favicon "logo16.png;image/png" \
-            --css subdoc-test-style.css \
-            --project-logo logo.png \
-            --project-md sus/project.md \
-            --project-name Subspace \
-            /home/runner/work/subspace/subspace/sus
-
-      - name: Deploy
-        run: |
-          SHA=`git rev-parse HEAD`
-          cd docs
-          git config user.email "noreply@chromium.org"
-          git config user.name "Subspace subdoc generator"
-          git add .
-          git commit -m "Update docs: $SHA" || true
-          git push origin || true
