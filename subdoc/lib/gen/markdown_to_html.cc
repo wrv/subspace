@@ -49,11 +49,11 @@ RLBOX_DEFINE_BASE_TYPES_FOR(md4c, wasm2c)
 #include "third_party/rlbox/code/include/rlbox.hpp"
 #include "third_party/rlbox/code/include/rlbox_noop_sandbox.hpp"
 
+using namespace rlbox;
+
 // Define base type for md4c using the wasm2c sandbox
 RLBOX_DEFINE_BASE_TYPES_FOR(md4c, noop)
 #endif
-
-using namespace rlbox;
 
 #include "subdoc/lib/gen/rlbox_md4c_types.h"
 rlbox_load_structs_from_library(md4c);
@@ -68,8 +68,8 @@ struct UserData {
   sus::Option<std::string> error_message;
 };
 
-// UserData is not modified within md4c, so never send it to 
-// the library so it has no chance of corrupting it. 
+// UserData is not modified within md4c, so never send it to
+// the library so it has no chance of corrupting it.
 thread_local UserData* userdata = nullptr;
 
 /// Grabs the contents of the first non-empty html tag as the summary.
@@ -350,36 +350,42 @@ void apply_syntax_highlighting(std::string& str) noexcept {
   }
 }
 
-}  // namespace
-
 // Callback functions
 
-void process_output(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, tainted_md4c<void*> v) {
+void process_output(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, __attribute__((unused)) tainted_md4c<void*> v) {
   assert(userdata);
 
-  auto chars = tainted_chars.copy_and_verify_string([](std::unique_ptr<MD_CHAR[]> val) {
-    assert(val != nullptr);
-    return std::move(val);
-  });
-
-  auto size = tainted_size.copy_and_verify([](MD_SIZE val) {
+  // Copy the returned size from the library
+  size_t size = tainted_size.copy_and_verify([](MD_SIZE val) {
     return val;
   });
 
+  auto chars = tainted_chars.copy_and_verify_string([size](std::unique_ptr<MD_CHAR[]> val) {
+    assert(val != nullptr);
+    // Verify the array length is the same as the returned size
+    size_t len = std::strlen(val.get());
+    assert(len == val);
+    return std::move(val);
+  });
+
+  // Copy the string and leng
   userdata->parsed << std::string_view(chars.get(), size);
 }
 
-tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, tainted_md4c<void*> v,
-                            tainted_md4c<MD_HTML*> tainted_html) {
+tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, 
+                            __attribute__((unused)) tainted_md4c<void*> v, tainted_md4c<MD_HTML*> tainted_html) {
   assert(userdata);
 
-  auto chars = tainted_chars.copy_and_verify_string([](std::unique_ptr<MD_CHAR[]> val) {
-    assert(val != nullptr);
-    return std::move(val);
+  size_t size = tainted_size.copy_and_verify([](MD_SIZE val) {
+    return val;
   });
 
-  auto size = tainted_size.copy_and_verify([](MD_SIZE val) {
-    return val;
+  auto chars = tainted_chars.copy_and_verify_string([size](std::unique_ptr<MD_CHAR[]> val) {
+    assert(val != nullptr);
+    // Verify the array length is the same as the claimed size
+    size_t len = std::strlen(val.get());
+    assert(len == val);
+    return std::move(val);
   });
 
   auto mapped = std::string(std::string_view(chars.get(), size));
@@ -403,37 +409,42 @@ tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
   int result = 0;
   auto tainted_mapped = sandbox.malloc_in_sandbox<MD_CHAR>(size);
   mapped.copy(tainted_mapped.unverified_safe_pointer_because(size, "writing to region"), mapped.length(), 0);
-  result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_mapped, size).copy_and_verify([](int val) {return val;});
+
+  result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_mapped, size).copy_and_verify([](int result) {return result;});
 
   if (result != 0) return result;
   if (count > 0u) {
     auto cur_char = sandbox.malloc_in_sandbox<MD_CHAR>(2);
     cur_char[0] = '-';
     cur_char[1] = '\0';
-    result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, cur_char, 1).copy_and_verify([](int val) {return val;});
+    result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, cur_char, 1).copy_and_verify([](int result) {return result;});
    if (result != 0) return result;
     while (count > 0u) {
       static const char NUMS[] = "0123456789";
       auto val = NUMS + (count % 10u);
       cur_char[0] = *val;
       cur_char[1] = '\0';
-      result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, cur_char, 1u).copy_and_verify([](int val) {return val;});
-    if (result != 0) return result;
+      result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, cur_char, 1u).copy_and_verify([](int result) {return result;});
+   if (result != 0) return result;
       count /= 10u;
    }
   }
   return result;
 }
 
-tainted_md4c<int> record_self_link(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, tainted_md4c<void*> v) {
+tainted_md4c<int> record_self_link(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, 
+                            __attribute__((unused)) tainted_md4c<void*> v) {
   assert(userdata);
-  auto chars = tainted_chars.copy_and_verify_string([](std::unique_ptr<MD_CHAR[]> val) {
-    assert(val != nullptr);
-    return std::move(val);
+  size_t size = tainted_size.copy_and_verify([](MD_SIZE val) {
+    return val;
   });
 
-  auto size = tainted_size.copy_and_verify([](MD_SIZE val) {
-    return val;
+  auto chars = tainted_chars.copy_and_verify_string([size](std::unique_ptr<MD_CHAR[]> val) {
+    assert(val != nullptr);
+    // Verify the array length is the same as the claimed size
+    size_t len = std::strlen(val.get());
+    assert(len == val);
+    return std::move(val);
   });
 
   auto mapped = std::string(std::string_view(chars.get(), size));
@@ -446,17 +457,19 @@ tainted_md4c<int> record_self_link(rlbox_sandbox_md4c& _, tainted_md4c<const MD_
   return 0;
 }
 
-tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, tainted_md4c<void*> v,
-                            tainted_md4c<MD_HTML*> tainted_html) {
+tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, 
+                            __attribute__((unused)) tainted_md4c<void*> v, tainted_md4c<MD_HTML*> tainted_html) {
   assert(userdata);
 
-  auto size = tainted_size.copy_and_verify([](MD_SIZE val) {
+  size_t size = tainted_size.copy_and_verify([](MD_SIZE val) {
     return val;
   });
 
-  auto chars = tainted_chars.copy_and_verify_string([](std::unique_ptr<MD_CHAR[]> val) {
-   
+  auto chars = tainted_chars.copy_and_verify_string([size](std::unique_ptr<MD_CHAR[]> val) {
     assert(val != nullptr);
+    // Verify the array length is the same as the claimed size
+    size_t len = std::strlen(val.get());
+    assert(len == val);
     return std::move(val);
   });
 
@@ -495,12 +508,12 @@ tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
    }
     auto tainted_href_data = sandbox.malloc_in_sandbox<MD_CHAR>(href.size());
     memcpy(tainted_href_data.unverified_safe_pointer_because(href.size(), "writing to region"), href.data(), href.size());
-    int r = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_href_data, href.size()).copy_and_verify([](int val) {return val;});
+    int r = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_href_data, href.size()).copy_and_verify([](int result) {return result;});
     if (r != 0) return r;
     if (anchor.size() > 0u) {
       auto tainted_anchor_data = sandbox.malloc_in_sandbox<MD_CHAR>(anchor.size());
       memcpy(tainted_anchor_data.unverified_safe_pointer_because(anchor.size(), "writing to region"), anchor.data(), anchor.size());
-      r = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_anchor_data, anchor.size()).copy_and_verify([](int val) {return val;});
+      r = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_anchor_data, anchor.size()).copy_and_verify([](int result) {return result;});
    }
     return r;
   } else {
@@ -517,13 +530,15 @@ tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
   }
 }
 
+}  // namespace
+
 sus::Result<MarkdownToHtml, MarkdownToHtmlError> markdown_to_html(
     const Comment& comment, ParseMarkdownPageState& page_state) noexcept {
-  
+
   // Declare and create a new sandbox
   rlbox_sandbox_md4c sandbox;
   sandbox.create_sandbox();
-  
+
   std::ostringstream parsed;
 
   UserData data(parsed, page_state, sus::none());
@@ -553,13 +568,20 @@ sus::Result<MarkdownToHtml, MarkdownToHtmlError> markdown_to_html(
   unsigned parser_flags = MD_FLAG_PERMISSIVEAUTOLINKS | MD_FLAG_TABLES | MD_FLAG_STRIKETHROUGH |
           // Forked extensions.
           MD_FLAG_HEADERSELFLINKS | MD_FLAG_CODELINKS;
-  
+
   // We enable MD_ASSERT() to catch memory safety bugs, so
   // ensure something gets printed should a problem occur.
   unsigned renderer_flags = MD_HTML_FLAG_DEBUG;
 
-  int result = sandbox.invoke_sandbox_function(md_html, tainted_input, input_size, tainted_callbacks, nullptr, parser_flags, renderer_flags).copy_and_verify([](int ret){ return ret; });
-  
+  int result = sandbox.invoke_sandbox_function(
+      md_html,
+      tainted_input, input_size,
+      tainted_callbacks,
+      nullptr, // userdata only used in callbacks, so we keep it as a local variable
+      parser_flags,
+      renderer_flags)
+    .copy_and_verify([](int result){ return result; });
+
   // Remove the sandbox components we created
   sandbox.free_in_sandbox(tainted_input);
   sandbox.free_in_sandbox(tainted_callbacks);
