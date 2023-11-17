@@ -359,8 +359,10 @@ void process_output(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_
   tainted_chars.copy_and_verify_string([tainted_size](std::unique_ptr<MD_CHAR[]> chars) {
     assert(chars != nullptr);
     // Verify the array length is the same as the returned size
-    assert(tainted_size == std::strlen(chars.get()));
-    // Copy the string and leng
+    tainted_md4c<bool> same = tainted_size == std::strlen(chars.get());
+    // Comparing a tainted bool to a bool
+    assert(same == true);
+    // Copy the string and length
     userdata->parsed << std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against chars strlen"));
   });
 }
@@ -375,8 +377,10 @@ tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
   tainted_chars.copy_and_verify_string([tainted_size, &mapped](std::unique_ptr<MD_CHAR[]> chars) {
     assert(chars != nullptr);
     // Verify the array length is the same as the returned size
-    assert(tainted_size == std::strlen(chars.get()));
-    // Copy the string and leng
+    tainted_md4c<bool> same = tainted_size == std::strlen(chars.get());
+    // Comparing a tainted bool to a bool
+    assert(same == true);
+    // Copy the string and length
     mapped = std::string(std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against chars strlen.")));
   });
 
@@ -433,8 +437,10 @@ tainted_md4c<int> record_self_link(rlbox_sandbox_md4c& _, tainted_md4c<const MD_
   tainted_chars.copy_and_verify_string([tainted_size, &mapped](std::unique_ptr<MD_CHAR[]> chars) {
     assert(chars != nullptr);
     // Verify the array length is the same as the returned size
-    assert(tainted_size == std::strlen(chars.get()));
-    // Copy the string and leng
+    auto same = tainted_size == std::strlen(chars.get());
+    // Comparing a tainted bool to a bool
+    assert(same == true);
+    // Copy the string and length
     mapped = std::string(std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against strlen.")));
   });
 
@@ -457,8 +463,10 @@ tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
   tainted_chars.copy_and_verify_string([tainted_size, &name](std::unique_ptr<MD_CHAR[]> chars) {
     assert(chars != nullptr);
     // Verify the array length is the same as the returned size
-    assert(tainted_size == std::strlen(chars.get()));
-    // Copy the string and leng
+    auto same = tainted_size == std::strlen(chars.get());
+    // Comparing a tainted bool to a bool
+    assert(same == true);
+    // Copy the string and length
     name = std::string(std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against strlen.")));
   });
 
