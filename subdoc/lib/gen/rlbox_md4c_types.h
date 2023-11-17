@@ -20,7 +20,7 @@
 #endif
 
 // Create aliases to func pointer types
-typedef void  (*md4c_process_output)(const MD_CHAR*, MD_SIZE, void*);
+typedef int (*md4c_process_output)(const MD_CHAR*, MD_SIZE, void*);
 typedef int (*md4c_render_self_link)(const MD_CHAR* /*chars*/, MD_SIZE /*size*/, void* /*userdata*/, MD_HTML* /*html*/);
 typedef int (*md4c_record_self_link)(const MD_CHAR* /*chars*/, MD_SIZE /*size*/, void* /*userdata*/);
 typedef int (*md4c_render_code_link)(const MD_CHAR* /*chars*/, MD_SIZE /*size*/, void* /*userdata*/, MD_HTML* /*html*/);

@@ -350,39 +350,66 @@ void apply_syntax_highlighting(std::string& str) noexcept {
   }
 }
 
-// Callback functions
+// MD4C Callback functions
 
-void process_output(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, __attribute__((unused)) tainted_md4c<void*> v) {
-  assert(userdata);
+tainted_md4c<int> process_output(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, __attribute__((unused)) tainted_md4c<void*> v) {
+  if (!userdata) {
+    return -1;
+  }
 
   // We assume the recovered char array is NULL free, so we copy it as a string.
-  tainted_chars.copy_and_verify_string([tainted_size](std::unique_ptr<MD_CHAR[]> chars) {
-    assert(chars != nullptr);
-    // Verify the array length is the same as the returned size
-    tainted_md4c<bool> same = tainted_size == std::strlen(chars.get());
-    // Comparing a tainted bool to a bool
-    assert(same == true);
+  int ret = tainted_chars.copy_and_verify_string([tainted_size](std::unique_ptr<MD_CHAR[]> chars) {
+    if (!chars) {
+      std::string msg = fmt::format("[process_output] recovered char array is null");
+      userdata->error_message = sus::some(sus::move(msg));
+      return -1;
+    }
+    // Verify the recovered size is less than the string length
+    auto recovered_size = tainted_size.unverified_safe_because("used in comparision");
+    auto size = std::strlen(chars.get());
+    if (recovered_size > size) {
+      std::string msg =
+        fmt::format("[process_output] the claimed size ({}) is greater than the string size ({})", recovered_size, size);
+      userdata->error_message = sus::some(sus::move(msg));
+      return -1;
+    }
     // Copy the string and length
-    userdata->parsed << std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against chars strlen"));
+    userdata->parsed << std::string_view(chars.get(), recovered_size);
+    return 0;
   });
+
+  return ret;
 }
 
 tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, 
                             __attribute__((unused)) tainted_md4c<void*> v, tainted_md4c<MD_HTML*> tainted_html) {
-  assert(userdata);
+  if (!userdata) {
+    return -1;
+  }
 
   std::string mapped;
 
   // We assume the recovered char array is NULL free, so we copy it as a string.
-  tainted_chars.copy_and_verify_string([tainted_size, &mapped](std::unique_ptr<MD_CHAR[]> chars) {
-    assert(chars != nullptr);
-    // Verify the array length is the same as the returned size
-    tainted_md4c<bool> same = tainted_size == std::strlen(chars.get());
-    // Comparing a tainted bool to a bool
-    assert(same == true);
+  int result = tainted_chars.copy_and_verify_string([tainted_size, &mapped](std::unique_ptr<MD_CHAR[]> chars) {
+    if (!chars) {
+      std::string msg = fmt::format("[render_self_link] recovered char array is null");
+      userdata->error_message = sus::some(sus::move(msg));
+      return -1;
+    }
+    // Verify the recovered size is less than the string length
+    auto recovered_size = tainted_size.unverified_safe_because("used in comparision");
+    auto size = std::strlen(chars.get());
+    if (recovered_size > size) {
+      std::string msg =
+        fmt::format("[render_self_link] the claimed size ({}) is greater than the string size ({})", recovered_size, size);
+      userdata->error_message = sus::some(sus::move(msg));
+      return -1;
+    }
     // Copy the string and length
-    mapped = std::string(std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against chars strlen.")));
+    mapped = std::string(std::string_view(chars.get(), recovered_size));
+    return 0;
   });
+  if (result != 0) return result;
 
   auto count = 0_u32;
   if (auto it = userdata->page_state.self_link_counts.find(mapped);
@@ -401,7 +428,7 @@ tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
   }
 
   size_t size = mapped.length();
-  int result = 0;
+  result = 0;
   auto tainted_mapped = sandbox.malloc_in_sandbox<MD_CHAR>(size);
   mapped.copy(tainted_mapped.unverified_safe_pointer_because(size, "writing to region"), mapped.length(), 0);
 
@@ -429,20 +456,33 @@ tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
 
 tainted_md4c<int> record_self_link(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, 
                             __attribute__((unused)) tainted_md4c<void*> v) {
-  assert(userdata);
+  if (!userdata) {
+    return -1;
+  }
 
   std::string mapped;
 
   // We assume the recovered char array is NULL free, so we copy it as a string.
-  tainted_chars.copy_and_verify_string([tainted_size, &mapped](std::unique_ptr<MD_CHAR[]> chars) {
-    assert(chars != nullptr);
-    // Verify the array length is the same as the returned size
-    auto same = tainted_size == std::strlen(chars.get());
-    // Comparing a tainted bool to a bool
-    assert(same == true);
+  int result = tainted_chars.copy_and_verify_string([tainted_size, &mapped](std::unique_ptr<MD_CHAR[]> chars) {
+    if (!chars) {
+      std::string msg = fmt::format("[record_self_link] recovered char array is null");
+      userdata->error_message = sus::some(sus::move(msg));
+      return -1;
+    }
+    // Verify the recovered size is less than the string length
+    auto recovered_size = tainted_size.unverified_safe_because("used in comparision");
+    auto size = std::strlen(chars.get());
+    if (recovered_size > size) {
+      std::string msg =
+        fmt::format("[record_self_link] the claimed size ({}) is greater than the string size ({})", recovered_size, size);
+      userdata->error_message = sus::some(sus::move(msg));
+      return -1;
+    }
     // Copy the string and length
-    mapped = std::string(std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against strlen.")));
+    mapped = std::string(std::string_view(chars.get(), recovered_size));
+    return 0;
   });
+  if (result != 0) return result;
 
   if (auto it = userdata->page_state.self_link_counts.find(mapped);
       it != userdata->page_state.self_link_counts.end()) {
@@ -455,20 +495,33 @@ tainted_md4c<int> record_self_link(rlbox_sandbox_md4c& _, tainted_md4c<const MD_
 
 tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, 
                             __attribute__((unused)) tainted_md4c<void*> v, tainted_md4c<MD_HTML*> tainted_html) {
-  assert(userdata);
+  if (!userdata) {
+    return -1;
+  }
 
   std::string name;
 
-  // We assume the recovered char array is NULL free, so we copy it as a string.
-  tainted_chars.copy_and_verify_string([tainted_size, &name](std::unique_ptr<MD_CHAR[]> chars) {
-    assert(chars != nullptr);
-    // Verify the array length is the same as the returned size
-    auto same = tainted_size == std::strlen(chars.get());
-    // Comparing a tainted bool to a bool
-    assert(same == true);
+    // We assume the recovered char array is NULL free, so we copy it as a string.
+  int result = tainted_chars.copy_and_verify_string([tainted_size, &name](std::unique_ptr<MD_CHAR[]> chars) {
+    if (!chars) {
+      std::string msg = fmt::format("[render_code_link] recovered char array is null");
+      userdata->error_message = sus::some(sus::move(msg));
+      return -1;
+    }
+    // Verify the recovered size is less than the string length
+    auto recovered_size = tainted_size.unverified_safe_because("used in comparision");
+    auto size = std::strlen(chars.get());
+    if (recovered_size > size) {
+      std::string msg =
+        fmt::format("[render_code_link] the claimed size ({}) is greater than the string size ({})", recovered_size, size);
+      userdata->error_message = sus::some(sus::move(msg));
+      return -1;
+    }
     // Copy the string and length
-    name = std::string(std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against strlen.")));
+    name = std::string(std::string_view(chars.get(), recovered_size));
+    return 0;
   });
+  if (result != 0) return result;
 
   auto anchor = std::string_view();
   if (auto pos = name.find('#'); pos != std::string_view::npos) {
