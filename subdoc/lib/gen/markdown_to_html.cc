@@ -355,40 +355,32 @@ void apply_syntax_highlighting(std::string& str) noexcept {
 void process_output(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, __attribute__((unused)) tainted_md4c<void*> v) {
   assert(userdata);
 
-  // Copy the returned size from the library
-  size_t size = tainted_size.copy_and_verify([](MD_SIZE val) {
-    return val;
-  });
-
-  auto chars = tainted_chars.copy_and_verify_string([size](std::unique_ptr<MD_CHAR[]> val) {
-    assert(val != nullptr);
+  // We assume the recovered char array is NULL free, so we copy it as a string.
+  tainted_chars.copy_and_verify_string([tainted_size](std::unique_ptr<MD_CHAR[]> chars) {
+    assert(chars != nullptr);
     // Verify the array length is the same as the returned size
-    size_t len = std::strlen(val.get());
-    assert(len == val);
-    return std::move(val);
+    auto same = tainted_size == std::strlen(chars.get());
+    assert(same);
+    // Copy the string and leng
+    userdata->parsed << std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against chars strlen"));
   });
-
-  // Copy the string and leng
-  userdata->parsed << std::string_view(chars.get(), size);
 }
 
 tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, 
                             __attribute__((unused)) tainted_md4c<void*> v, tainted_md4c<MD_HTML*> tainted_html) {
   assert(userdata);
 
-  size_t size = tainted_size.copy_and_verify([](MD_SIZE val) {
-    return val;
-  });
+  std::string mapped;
 
-  auto chars = tainted_chars.copy_and_verify_string([size](std::unique_ptr<MD_CHAR[]> val) {
-    assert(val != nullptr);
-    // Verify the array length is the same as the claimed size
-    size_t len = std::strlen(val.get());
-    assert(len == val);
-    return std::move(val);
+  // We assume the recovered char array is NULL free, so we copy it as a string.
+  tainted_chars.copy_and_verify_string([tainted_size, &mapped](std::unique_ptr<MD_CHAR[]> chars) {
+    assert(chars != nullptr);
+    // Verify the array length is the same as the returned size
+    auto same = tainted_size == std::strlen(chars.get());
+    assert(same);
+    // Copy the string and leng
+    mapped = std::string(std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against chars strlen.")));
   });
-
-  auto mapped = std::string(std::string_view(chars.get(), size));
 
   auto count = 0_u32;
   if (auto it = userdata->page_state.self_link_counts.find(mapped);
@@ -406,25 +398,26 @@ tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
    }
   }
 
+  size_t size = mapped.length();
   int result = 0;
   auto tainted_mapped = sandbox.malloc_in_sandbox<MD_CHAR>(size);
   mapped.copy(tainted_mapped.unverified_safe_pointer_because(size, "writing to region"), mapped.length(), 0);
 
-  result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_mapped, size).copy_and_verify([](int result) {return result;});
+  result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_mapped, size).unverified_safe_because("Result is checked.");
 
   if (result != 0) return result;
   if (count > 0u) {
     auto cur_char = sandbox.malloc_in_sandbox<MD_CHAR>(2);
     cur_char[0] = '-';
     cur_char[1] = '\0';
-    result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, cur_char, 1).copy_and_verify([](int result) {return result;});
+    result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, cur_char, 1).unverified_safe_because("Result is checked.");
    if (result != 0) return result;
     while (count > 0u) {
       static const char NUMS[] = "0123456789";
       auto val = NUMS + (count % 10u);
       cur_char[0] = *val;
       cur_char[1] = '\0';
-      result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, cur_char, 1u).copy_and_verify([](int result) {return result;});
+      result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, cur_char, 1u).unverified_safe_because("Result is checked.");
    if (result != 0) return result;
       count /= 10u;
    }
@@ -435,19 +428,19 @@ tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
 tainted_md4c<int> record_self_link(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CHAR*> tainted_chars, tainted_md4c<MD_SIZE> tainted_size, 
                             __attribute__((unused)) tainted_md4c<void*> v) {
   assert(userdata);
-  size_t size = tainted_size.copy_and_verify([](MD_SIZE val) {
-    return val;
+
+  std::string mapped;
+
+  // We assume the recovered char array is NULL free, so we copy it as a string.
+  tainted_chars.copy_and_verify_string([tainted_size, &mapped](std::unique_ptr<MD_CHAR[]> chars) {
+    assert(chars != nullptr);
+    // Verify the array length is the same as the returned size
+    auto same = tainted_size == std::strlen(chars.get());
+    assert(same);
+    // Copy the string and leng
+    mapped = std::string(std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against strlen.")));
   });
 
-  auto chars = tainted_chars.copy_and_verify_string([size](std::unique_ptr<MD_CHAR[]> val) {
-    assert(val != nullptr);
-    // Verify the array length is the same as the claimed size
-    size_t len = std::strlen(val.get());
-    assert(len == val);
-    return std::move(val);
-  });
-
-  auto mapped = std::string(std::string_view(chars.get(), size));
   if (auto it = userdata->page_state.self_link_counts.find(mapped);
       it != userdata->page_state.self_link_counts.end()) {
     it->second += 1u;
@@ -461,19 +454,18 @@ tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
                             __attribute__((unused)) tainted_md4c<void*> v, tainted_md4c<MD_HTML*> tainted_html) {
   assert(userdata);
 
-  size_t size = tainted_size.copy_and_verify([](MD_SIZE val) {
-    return val;
+  std::string name;
+
+  // We assume the recovered char array is NULL free, so we copy it as a string.
+  tainted_chars.copy_and_verify_string([tainted_size, &name](std::unique_ptr<MD_CHAR[]> chars) {
+    assert(chars != nullptr);
+    // Verify the array length is the same as the returned size
+    auto same = tainted_size == std::strlen(chars.get());
+    assert(same);
+    // Copy the string and leng
+    name = std::string(std::string_view(chars.get(), tainted_size.unverified_safe_because("size is checked against strlen.")));
   });
 
-  auto chars = tainted_chars.copy_and_verify_string([size](std::unique_ptr<MD_CHAR[]> val) {
-    assert(val != nullptr);
-    // Verify the array length is the same as the claimed size
-    size_t len = std::strlen(val.get());
-    assert(len == val);
-    return std::move(val);
-  });
-
-  auto name = std::string_view(chars.get(), size);
   auto anchor = std::string_view();
   if (auto pos = name.find('#'); pos != std::string_view::npos) {
     anchor = name.substr(pos);
@@ -508,18 +500,17 @@ tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
    }
     auto tainted_href_data = sandbox.malloc_in_sandbox<MD_CHAR>(href.size());
     memcpy(tainted_href_data.unverified_safe_pointer_because(href.size(), "writing to region"), href.data(), href.size());
-    int r = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_href_data, href.size()).copy_and_verify([](int result) {return result;});
+    int r = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_href_data, href.size()).unverified_safe_because("Result is checked.");
     if (r != 0) return r;
     if (anchor.size() > 0u) {
       auto tainted_anchor_data = sandbox.malloc_in_sandbox<MD_CHAR>(anchor.size());
       memcpy(tainted_anchor_data.unverified_safe_pointer_because(anchor.size(), "writing to region"), anchor.data(), anchor.size());
-      r = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_anchor_data, anchor.size()).copy_and_verify([](int result) {return result;});
+      r = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_anchor_data, anchor.size()).unverified_safe_because("Result is checked.");
    }
     return r;
   } else {
     std::string msg =
-        fmt::format("unable to resolve code link '{}' to a C++ name",
-                    std::string_view(chars.get(), size));
+        fmt::format("unable to resolve code link '{}' to a C++ name", name);
     if (userdata->page_state.options.ignore_bad_code_links) {
       fmt::println("WARNING: {}", msg);
       return 0;
@@ -580,7 +571,7 @@ sus::Result<MarkdownToHtml, MarkdownToHtmlError> markdown_to_html(
       nullptr, // userdata only used in callbacks, so we keep it as a local variable
       parser_flags,
       renderer_flags)
-    .copy_and_verify([](int result){ return result; });
+    .unverified_safe_because("Result is checked.");
 
   // Remove the sandbox components we created
   sandbox.free_in_sandbox(tainted_input);
