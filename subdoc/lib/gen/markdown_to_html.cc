@@ -357,26 +357,25 @@ tainted_md4c<int> process_output(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CH
     return -1;
   }
 
+  MD_SIZE size = tainted_size.unverified_safe_because(
+      "Used to read some amount of tainted_chars."
+      "Similar to the reasoning in copy_and_verify_string:"
+      "in the worst case we will be copying all of the"
+      "memory out of the sandbox, but it will never be"
+      "outside the sandbox's range."
+  );
+
   // We assume the recovered char array is NULL free, so we copy it as a string.
-  int ret = tainted_chars.copy_and_verify_string([tainted_size](std::unique_ptr<MD_CHAR[]> chars) {
+  int ret = tainted_chars.copy_and_verify_range([](std::unique_ptr<MD_CHAR[]> chars) {
     if (!chars) {
       std::string msg = fmt::format("[process_output] recovered char array is null");
       userdata->error_message = sus::some(sus::move(msg));
       return -1;
     }
-    // Verify the recovered size is less than the string length
-    auto recovered_size = tainted_size.unverified_safe_because("used in comparision");
-    auto size = std::strlen(chars.get());
-    if (recovered_size > size) {
-      std::string msg =
-        fmt::format("[process_output] the claimed size ({}) is greater than the string size ({})", recovered_size, size);
-      userdata->error_message = sus::some(sus::move(msg));
-      return -1;
-    }
-    // Copy the string and length
-    userdata->parsed << std::string_view(chars.get(), recovered_size);
+    // Create the string up to some size
+    userdata->parsed << std::string_view(chars.get(), size);
     return 0;
-  });
+  }, size);
 
   return ret;
 }
