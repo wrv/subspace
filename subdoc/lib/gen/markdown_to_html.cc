@@ -366,7 +366,7 @@ tainted_md4c<int> process_output(rlbox_sandbox_md4c& _, tainted_md4c<const MD_CH
   );
 
   // We assume the recovered char array is NULL free, so we copy it as a string.
-  int ret = tainted_chars.copy_and_verify_range([](std::unique_ptr<MD_CHAR[]> chars) {
+  int ret = tainted_chars.copy_and_verify_range([size](std::unique_ptr<MD_CHAR[]> chars) {
     if (!chars) {
       std::string msg = fmt::format("[process_output] recovered char array is null");
       userdata->error_message = sus::some(sus::move(msg));
