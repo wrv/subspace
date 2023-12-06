@@ -389,7 +389,8 @@ tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
   std::string mapped;
 
   MD_SIZE size = tainted_size.unverified_safe_because(
-      "Used to read some amount of tainted_chars."
+      "Used to read some amount of tainted_chars, and later to"
+      "allocate memory in the sandbox."
       "Similar to the reasoning in copy_and_verify_string:"
       "in the worst case we will be copying all of the"
       "memory out of the sandbox, but it will never be"
@@ -425,10 +426,9 @@ tainted_md4c<int> render_self_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
    }
   }
 
-  size_t size = mapped.length();
   result = 0;
   auto tainted_mapped = sandbox.malloc_in_sandbox<MD_CHAR>(size);
-  mapped.copy(tainted_mapped.unverified_safe_pointer_because(size, "writing to region"), mapped.length(), 0);
+  mapped.copy(tainted_mapped.unverified_safe_pointer_because(size, "writing to region"), size, 0);
 
   result = sandbox.invoke_sandbox_function(render_url_escaped, tainted_html, tainted_mapped, size).unverified_safe_because("Result is checked.");
 
@@ -457,6 +457,8 @@ tainted_md4c<int> record_self_link(rlbox_sandbox_md4c& _, tainted_md4c<const MD_
   if (!userdata) {
     return -1;
   }
+
+  std::string mapped;
 
   MD_SIZE size = tainted_size.unverified_safe_because(
       "Used to read some amount of tainted_chars."
