@@ -65,7 +65,7 @@ namespace {
 struct UserData {
   std::ostringstream& parsed;
   ParseMarkdownPageState& page_state;
-  sus::Option<std::string> error_message;
+  Option<std::string> error_message;
 };
 
 // UserData is not modified within md4c, so never send it to
@@ -524,7 +524,7 @@ tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
     anchor = name.substr(pos);
     name = name.substr(0u, pos);
   }
-  sus::Option<FoundName> found = userdata->page_state.db.find_name(name);
+  Option<FoundName> found = userdata->page_state.db.find_name(name);
   if (found.is_some()) {
     std::string href;
     switch (found.as_value()) {
@@ -541,7 +541,6 @@ tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
         href = construct_html_url_for_type(
             found.as_value().as<FoundName::Tag::Type>());
         break;
-
       case FoundName::Tag::Concept:
         href = construct_html_url_for_concept(
             found.as_value().as<FoundName::Tag::Concept>());
@@ -550,6 +549,10 @@ tainted_md4c<int> render_code_link(rlbox_sandbox_md4c& sandbox, tainted_md4c<con
         href = construct_html_url_for_field(
             found.as_value().as<FoundName::Tag::Field>());
         break;
+      case FoundName::Tag::Macro:
+          href = construct_html_url_for_macro(
+              found.as_value().as<FoundName::Tag::Macro>());
+          break;
    }
     auto tainted_href_data = sandbox.malloc_in_sandbox<MD_CHAR>(href.size());
     memcpy(tainted_href_data.unverified_safe_pointer_because(href.size(), "writing to region"), href.data(), href.size());
