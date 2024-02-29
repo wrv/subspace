@@ -137,6 +137,9 @@ target_link_libraries(subdoc_lib
     clangTransformer
 )
 
+# To avoid type conflict
+SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -DWASM_RT_CORE_TYPES_DEFINED")
+
 # subdoc binary
 subspace_binary_default_compile_options(subdoc)
 target_link_libraries(subdoc subdoc::lib RLBoxMD4C)

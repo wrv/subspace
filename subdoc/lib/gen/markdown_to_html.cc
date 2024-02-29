@@ -32,7 +32,29 @@
 #define RLBOX_USE_STATIC_CALLS() rlbox_wasm2c_sandbox_lookup_symbol
 #define RLBOX_WASM2C_MODULE_NAME  md4c
 
+// This is to avoid a collision with the WASM types
+#define u8  uint8_t
+#define u16 uint16_t
+#define u32 uint32_t
+#define u64 uint64_t
+#define s8  int8_t
+#define s16 int16_t
+#define s32 int32_t
+#define s64 int64_t
+#define f32 float
+#define f64 double
 #include "third_party/md4c/src/md4c.wasm.h"
+#undef u8
+#undef u16
+#undef u32
+#undef u64
+#undef s8
+#undef s16
+#undef s32
+#undef s64
+#undef f32
+#undef f64
+
 #include "third_party/rlbox/code/include/rlbox.hpp"
 #include "third_party/rlbox_wasm2c_sandbox/include/rlbox_wasm2c_sandbox.hpp"
 

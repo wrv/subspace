@@ -16,6 +16,7 @@ WASM2C_RUNTIME_FILES=$(addprefix $(RLBOX_ROOT)/src, /wasm2c_rt_minwasi.c /wasm2c
 WASI_CLANG=$(WASI_SDK_ROOT)/bin/clang
 WASI_SYSROOT=$(WASI_SDK_ROOT)/share/wasi-sysroot
 WASM2C=$(RLBOX_ROOT)/build/_deps/mod_wasm2c-src/bin/wasm2c
+WASM2C_FLAGS=-DWASM_RT_CORE_TYPES_DEFINED -Du8=uint8_t -Du16=uint16_t -Du32=uint32_t -Du64=uint64_t -Ds8=int8_t -Ds16=int16_t -Ds32=int32_t -Ds64=int64_t -Df32=float -Df64=double
 
 #CFLAGS for compiling files to place nice with wasm2c
 WASM_CFLAGS=-Wl,--export-all -Wl,--stack-first -Wl,-z,stack-size=262144 -Wl,--no-entry -Wl,--growable-table -Wl,--import-memory -Wl,--import-table
@@ -33,14 +34,9 @@ third_party/md4c/src/md4c.wasm: third_party/md4c/src/md4c-html.c
 #    Sed the typedefs to not conflict with subspace types
 third_party/md4c/src/md4c.wasm.c: third_party/md4c/src/md4c.wasm
 	$(WASM2C) third_party/md4c/src/md4c.wasm -o third_party/md4c/src/md4c.wasm.c
-	sed -i "s/\bu8\b/wasm_u8/g"   third_party/md4c/src/md4c.wasm.*
-	sed -i "s/\bu16\b/wasm_u16/g" third_party/md4c/src/md4c.wasm.*
-	sed -i "s/\bu32\b/wasm_u32/g" third_party/md4c/src/md4c.wasm.*
-	sed -i "s/\bu64\b/wasm_u64/g" third_party/md4c/src/md4c.wasm.*
-	sed -i "s/\bf32\b/wasm_f32/g" third_party/md4c/src/md4c.wasm.*
-	sed -i "s/\bf64\b/wasm_f64/g" third_party/md4c/src/md4c.wasm.*
 
 #Step 3: compiling and linking our application with our library
 md4c.wasm.a: third_party/md4c/src/md4c.wasm.c
-	cd third_party/md4c/src/; $(CC) -c $(WASM2C_RUNTIME_FILES) $(WASI_RUNTIME_FILES) -I$(RLBOX_INCLUDE) -I$(RLBOX_ROOT)/include -I$(WASM2C_RUNTIME_PATH) md4c.wasm.c
+	cd third_party/md4c/src/; $(CC) -c $(WASM2C_RUNTIME_FILES) $(WASI_RUNTIME_FILES) -I$(RLBOX_INCLUDE) -I$(RLBOX_ROOT)/include -I$(WASM2C_RUNTIME_PATH)
+	cd third_party/md4c/src/; $(CC) -c -I$(RLBOX_INCLUDE) -I$(RLBOX_ROOT)/include -I$(WASM2C_RUNTIME_PATH) md4c.wasm.c $(WASM2C_FLAGS)
 	cd third_party/md4c/src/; ar rcs $@ *.o
